@@ -1,8 +1,8 @@
 /**
- * Maps the app's internal language codes to the ISO codes the on-device
- * M2M-100 model uses. Every language variant in the app is covered, so any
- * pair the UI offers can be translated in the browser. (M2M-100 has no
- * separate script/dialect variants, so e.g. both Chinese variants map to "zh".)
+ * Maps the app's internal language codes to the ISO 639-1 codes the free
+ * translation APIs (MyMemory, Lingva) expect. Every language variant in the
+ * app is covered. (These APIs don't distinguish script/dialect variants, so
+ * e.g. both Chinese variants map to "zh".)
  */
 const MODEL_LANG: Record<string, string> = {
   "en-US": "en",

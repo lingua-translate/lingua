@@ -12,7 +12,6 @@ import {
   AlertCircle,
   Info,
   SlidersHorizontal,
-  Cpu,
 } from "lucide-react";
 import {
   LANGUAGES,
@@ -334,10 +333,15 @@ export function Translator({
                     cls: "bg-accent/10 text-accent ring-accent/30",
                     title: `Translated by ${result.model}`,
                   },
-                  local: {
-                    label: "On-device",
+                  mymemory: {
+                    label: "MyMemory",
                     cls: "bg-primary/10 text-primary ring-primary/30",
-                    title: "Translated in your browser with M2M-100 — no server, no API",
+                    title: "Translated via MyMemory — free online translation",
+                  },
+                  lingva: {
+                    label: "Lingva",
+                    cls: "bg-primary/10 text-primary ring-primary/30",
+                    title: "Translated via Lingva — free online translation",
                   },
                   mock: {
                     label: "Mock",
@@ -371,7 +375,7 @@ export function Translator({
           <div className="relative flex-1 overflow-y-auto scrollbar-slim">
             {loading ? (
               CLIENT_TRANSLATE_MODE ? (
-                <ModelProgress progress={progress} />
+                <TranslatingIndicator progress={progress} />
               ) : (
                 <StageProgress index={stageIndex} />
               )
@@ -417,7 +421,7 @@ export function Translator({
       <div className="sticky bottom-4 z-10 flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface/95 p-3 shadow-panel backdrop-blur">
         <p className="hidden text-xs text-muted sm:block">
           {CLIENT_TRANSLATE_MODE
-            ? "Runs entirely in your browser — no server, no API key, private by design."
+            ? "Free online translation — works on any device, nothing to install."
             : result?.confidence != null
               ? `Confidence ${Math.round(result.confidence * 100)}% · reviewed before delivery`
               : "Analyse · translate · review — every request runs the full pipeline."}
@@ -438,65 +442,19 @@ export function Translator({
   );
 }
 
-function formatMB(bytes?: number): string {
-  if (!bytes) return "";
-  return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
-}
-
-function ModelProgress({ progress }: { progress: ClientProgress | null }) {
-  const downloading = progress?.stage === "downloading";
-  const pct = Math.min(100, Math.round(progress?.percent ?? 0));
-
+function TranslatingIndicator({ progress }: { progress: ClientProgress | null }) {
+  const multi = (progress?.totalChunks ?? 0) > 1;
   return (
     <div
-      className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
+      className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center"
       role="status"
       aria-live="polite"
     >
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-soft text-primary">
-        {downloading ? (
-          <Download className="h-5 w-5" aria-hidden />
-        ) : (
-          <Cpu className="h-5 w-5" aria-hidden />
-        )}
-      </div>
-
-      {downloading ? (
-        <>
-          <div>
-            <p className="text-sm font-medium text-foreground">Preparing the translation model</p>
-            <p className="mt-1 text-xs text-muted">
-              One-time download, then it&rsquo;s cached and runs offline on your device.
-            </p>
-          </div>
-          <div className="w-full max-w-xs">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
-              <div
-                className="h-full rounded-full bg-primary transition-[width] duration-300"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <div className="mt-1.5 flex justify-between text-[11px] text-muted">
-              <span>{pct}%</span>
-              {progress?.totalBytes ? (
-                <span>
-                  {formatMB(progress.loadedBytes)} / {formatMB(progress.totalBytes)}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="flex items-center gap-2 text-sm text-foreground">
-          <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden />
-          <span>
-            Translating on your device
-            {progress?.totalChunks && progress.totalChunks > 1
-              ? ` · ${progress.done ?? 0}/${progress.totalChunks}`
-              : "…"}
-          </span>
-        </div>
-      )}
+      <Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden />
+      <p className="text-sm font-medium text-foreground">
+        Translating
+        {multi ? ` · part ${progress?.done ?? 0} of ${progress?.totalChunks}` : "…"}
+      </p>
     </div>
   );
 }

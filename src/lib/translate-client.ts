@@ -3,123 +3,209 @@ import { AUTO_DETECT } from "./languages";
 import { toModelLang, detectModelLang } from "./model-langs";
 
 /**
- * Browser-side translation using an on-device M2M-100 model (Transformers.js
- * running in a Web Worker). No API key, no backend, no external translation
- * service — everything runs in the visitor's browser. See public/translator.worker.js.
+ * Browser-side translation using free public translation APIs, called directly
+ * from the visitor's browser. No API key, no backend, no install, no model
+ * download — so it works on any device (phones and low-RAM laptops included)
+ * and stays fully compatible with static GitHub Pages hosting.
+ *
+ * Reliability strategy: try providers in order and return the first that
+ * succeeds. Every network call has a hard timeout, so the UI never hangs.
  */
 
 export const CLIENT_TRANSLATE_MODE =
   process.env.NEXT_PUBLIC_TRANSLATE_MODE === "client";
 
 export interface ClientProgress {
-  /** "downloading" the model (first use), then "translating". */
-  stage: "downloading" | "translating";
-  /** 0–100 while downloading. */
-  percent?: number;
-  loadedBytes?: number;
-  totalBytes?: number;
-  /** Chunk counters while translating longer text. */
+  stage: "translating";
   done?: number;
   totalChunks?: number;
 }
 
-let worker: Worker | null = null;
-let requestId = 0;
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_CHUNK = 450; // keep each request small (MyMemory ~500-byte limit)
 
-function getWorker(): Worker {
-  if (worker) return worker;
-  const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
-  worker = new Worker(`${base}/translator.worker.js`, { type: "module" });
-  return worker;
+type ProviderId = "mymemory" | "lingva";
+
+interface Provider {
+  id: ProviderId;
+  label: string;
+  translateChunk: (
+    text: string,
+    src: string,
+    tgt: string,
+    isAuto: boolean,
+    signal: AbortSignal,
+  ) => Promise<string>;
 }
 
-export function translateInBrowser(
+/** Run a fetch-based task with a hard timeout so the UI can never hang. */
+function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fn(ctrl.signal).finally(() => clearTimeout(timer));
+}
+
+const PROVIDERS: Provider[] = [
+  {
+    // Primary: stable, CORS-enabled, no key. Proven to work from the live site.
+    id: "mymemory",
+    label: "MyMemory",
+    async translateChunk(text, src, tgt, _isAuto, signal) {
+      const url = new URL("https://api.mymemory.translated.net/get");
+      url.searchParams.set("q", text);
+      url.searchParams.set("langpair", `${src}|${tgt}`);
+      const res = await fetch(url.toString(), { signal });
+      if (!res.ok) throw new Error(`MyMemory HTTP ${res.status}`);
+      const data = await res.json();
+      const out = data?.responseData?.translatedText ?? "";
+      const status = data?.responseStatus;
+      if (
+        !out ||
+        /MYMEMORY WARNING|YOU USED ALL|INVALID|SELECT TWO DISTINCT|QUERY LENGTH/i.test(out) ||
+        (typeof status === "number" && status !== 200)
+      ) {
+        throw new Error(out || `MyMemory status ${status}`);
+      }
+      return decodeEntities(out);
+    },
+  },
+  {
+    // Fallback: Lingva (Google-quality, CORS-enabled). Tried only if MyMemory
+    // fails (e.g. daily limit). Best-effort across a couple of public instances.
+    id: "lingva",
+    label: "Lingva",
+    async translateChunk(text, src, tgt, isAuto, signal) {
+      const instances = ["https://lingva.ml", "https://translate.plausibility.cloud"];
+      const sl = isAuto ? "auto" : src;
+      let lastErr: unknown;
+      for (const base of instances) {
+        try {
+          const res = await fetch(
+            `${base}/api/v1/${sl}/${tgt}/${encodeURIComponent(text)}`,
+            { signal },
+          );
+          if (!res.ok) {
+            lastErr = new Error(`Lingva HTTP ${res.status}`);
+            continue;
+          }
+          const data = await res.json();
+          if (data?.translation) return data.translation as string;
+          lastErr = new Error("Lingva: empty response");
+        } catch (e) {
+          lastErr = e;
+          if (signal.aborted) break;
+        }
+      }
+      throw lastErr instanceof Error ? lastErr : new Error("Lingva failed");
+    },
+  },
+];
+
+export async function translateInBrowser(
   params: TranslateParams,
   onProgress?: (p: ClientProgress) => void,
 ): Promise<TranslateResult> {
-  const detected =
-    params.source === AUTO_DETECT.code ? detectModelLang(params.text) : null;
-  const srcLang = detected ? detected.code : toModelLang(params.source);
-  const tgtLang = toModelLang(params.target);
+  const isAuto = params.source === AUTO_DETECT.code;
+  const detected = isAuto ? detectModelLang(params.text) : null;
+  const src = detected ? detected.code : toModelLang(params.source);
+  const tgt = toModelLang(params.target);
 
-  if (!srcLang) {
-    return Promise.reject(new Error("This source language isn't supported by the on-device model yet."));
+  if (!src || !tgt) {
+    throw new Error("This language pair isn't supported yet.");
   }
-  if (!tgtLang) {
-    return Promise.reject(new Error("This target language isn't supported by the on-device model yet."));
-  }
-
-  const id = ++requestId;
-  const w = getWorker();
-  // Track bytes per file so overall download % is accurate across model files.
-  const files: Record<string, { loaded: number; total: number }> = {};
-
-  return new Promise((resolve, reject) => {
-    // A worker-level error (e.g. the browser runs out of memory loading the
-    // model on a low-end device) would otherwise leave the UI spinning.
-    const onError = (e: ErrorEvent) => {
-      w.removeEventListener("message", handler);
-      w.removeEventListener("error", onError);
-      reject(
-        new Error(
-          "The translation model couldn't load on this device — it may not have enough memory. Try a desktop browser, or a device with more RAM.",
-        ),
-      );
-      // The worker may be in a bad state; drop it so the next attempt is fresh.
-      worker?.terminate();
-      worker = null;
-      if (e) e.preventDefault?.();
+  if (src === tgt) {
+    return {
+      translatedText: params.text,
+      provider: "mymemory",
+      model: "none",
+      notes: ["The source and target are the same language — nothing to translate."],
     };
+  }
 
-    const handler = (event: MessageEvent) => {
-      const msg = event.data;
-      // Result/error/translating messages are per-request; ignore other ids.
-      if (msg.id != null && msg.id !== id) return;
+  const chunks = chunkText(params.text, MAX_CHUNK);
+  const totalChunks = chunks.filter((c) => c.trim()).length || 1;
 
-      switch (msg.type) {
-        case "download": {
-          if (msg.file && msg.total) {
-            files[msg.file] = { loaded: msg.loaded || 0, total: msg.total || 0 };
-          }
-          const totals = Object.values(files);
-          const loaded = totals.reduce((s, f) => s + f.loaded, 0);
-          const total = totals.reduce((s, f) => s + f.total, 0);
-          onProgress?.({
-            stage: "downloading",
-            percent: total ? (loaded / total) * 100 : 0,
-            loadedBytes: loaded,
-            totalBytes: total,
-          });
-          break;
+  let lastError: Error | null = null;
+
+  for (const provider of PROVIDERS) {
+    try {
+      const parts: string[] = [];
+      let done = 0;
+      for (const chunk of chunks) {
+        if (!chunk.trim()) {
+          parts.push(chunk); // preserve blank lines / spacing verbatim
+          continue;
         }
-        case "translating":
-          onProgress?.({ stage: "translating", done: msg.done, totalChunks: msg.total });
-          break;
-        case "result":
-          w.removeEventListener("message", handler);
-          w.removeEventListener("error", onError);
-          resolve({
-            translatedText: msg.text,
-            detectedSource: detected ? detected.label : undefined,
-            provider: "local",
-            model: "M2M-100 · on-device",
-            notes: [
-              `Translated entirely in your browser — no text was sent to a server or external service.${
-                msg.device === "webgpu" ? " (GPU-accelerated)" : ""
-              }`,
-            ],
-          });
-          break;
-        case "error":
-          w.removeEventListener("message", handler);
-          w.removeEventListener("error", onError);
-          reject(new Error(msg.message || "On-device translation failed."));
-          break;
+        const translated = await withTimeout(
+          (signal) => provider.translateChunk(chunk, src, tgt, isAuto, signal),
+          FETCH_TIMEOUT_MS,
+        );
+        parts.push(translated);
+        done += 1;
+        onProgress?.({ stage: "translating", done, totalChunks });
       }
-    };
+      return {
+        translatedText: parts.join(""),
+        detectedSource: detected ? detected.label : undefined,
+        provider: provider.id,
+        model: provider.label,
+        notes: [
+          `Translated via ${provider.label} — free online translation, nothing to install.`,
+        ],
+      };
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      // Fall through to the next provider.
+    }
+  }
 
-    w.addEventListener("message", handler);
-    w.addEventListener("error", onError);
-    w.postMessage({ id, text: params.text, src_lang: srcLang, tgt_lang: tgtLang });
-  });
+  const msg = lastError?.message ?? "";
+  if (/YOU USED ALL|limit/i.test(msg)) {
+    throw new Error(
+      "The free translation service has reached today's limit for your network. Please try again later.",
+    );
+  }
+  throw new Error(
+    "Couldn't reach the translation service. Check your internet connection and try again.",
+  );
+}
+
+/** Split text into small chunks on sentence/whitespace boundaries. */
+function chunkText(text: string, maxLen: number): string[] {
+  const segments = text.split(/(\n+)/);
+  const chunks: string[] = [];
+  for (const seg of segments) {
+    if (seg === "" || /^\n+$/.test(seg)) {
+      chunks.push(seg);
+      continue;
+    }
+    if (seg.length <= maxLen) {
+      chunks.push(seg);
+      continue;
+    }
+    const sentences = seg.match(/[^.!?。！？]+[.!?。！？]?|\s+/g) || [seg];
+    let cur = "";
+    for (const s of sentences) {
+      if ((cur + s).length > maxLen && cur) {
+        chunks.push(cur);
+        cur = s;
+      } else {
+        cur += s;
+      }
+    }
+    if (cur) chunks.push(cur);
+  }
+  return chunks;
+}
+
+/** Decode the HTML entities MyMemory sometimes returns. */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
