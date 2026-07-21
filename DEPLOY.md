@@ -3,7 +3,7 @@
 The repo is preconfigured. On every push to `main`, a GitHub Actions workflow
 (`.github/workflows/deploy.yml`) builds a static version of the app and
 publishes it to GitHub Pages. Translation runs entirely in the visitor's
-browser via an on-device model (Transformers.js / NLLB-200) — no API key, no
+browser via an on-device model (Transformers.js / M2M-100) — no API key, no
 backend, and no external translation service.
 
 ## One-time setup
@@ -48,9 +48,11 @@ git push
 
 ## Notes
 - The public URL includes the repo name (`/REPO/`) because it's a project page.
-- Translation runs on-device: the first translation downloads the NLLB-200
-  model into the visitor's browser (a few hundred MB, one time), which is then
-  cached and works offline. Subsequent translations are fast, and WebGPU is
-  used automatically when available. Nothing is ever sent to a server.
+- Translation runs on-device: the first translation downloads the M2M-100
+  model into the visitor's browser (~600 MB, one time), which is then cached
+  and works offline. Subsequent translations are fast, and WebGPU is used
+  automatically when available. Nothing is ever sent to a server. Best on a
+  modern desktop browser; very low-memory devices may not be able to load a
+  model this large.
 - For higher-quality Claude translation you can instead deploy to a server host
   (Vercel, Cloud Run, …) with an API key — the code still supports that path.

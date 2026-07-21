@@ -22,7 +22,9 @@ if (!self.crossOriginIsolated && env.backends?.onnx?.wasm) {
   env.backends.onnx.wasm.numThreads = 1;
 }
 
-const MODEL = "Xenova/nllb-200-distilled-600M";
+// M2M-100 (418M): a single multilingual model covering every language the app
+// offers, chosen over the larger NLLB-600M so it loads on more devices.
+const MODEL = "Xenova/m2m100_418M";
 
 let translatorPromise = null;
 let activeDevice = "wasm";

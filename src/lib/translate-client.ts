@@ -1,9 +1,9 @@
 import type { TranslateParams, TranslateResult } from "./providers/types";
 import { AUTO_DETECT } from "./languages";
-import { toFlores, detectFlores } from "./flores";
+import { toModelLang, detectModelLang } from "./model-langs";
 
 /**
- * Browser-side translation using an on-device NLLB-200 model (Transformers.js
+ * Browser-side translation using an on-device M2M-100 model (Transformers.js
  * running in a Web Worker). No API key, no backend, no external translation
  * service — everything runs in the visitor's browser. See public/translator.worker.js.
  */
@@ -38,9 +38,9 @@ export function translateInBrowser(
   onProgress?: (p: ClientProgress) => void,
 ): Promise<TranslateResult> {
   const detected =
-    params.source === AUTO_DETECT.code ? detectFlores(params.text) : null;
-  const srcLang = detected ? detected.code : toFlores(params.source);
-  const tgtLang = toFlores(params.target);
+    params.source === AUTO_DETECT.code ? detectModelLang(params.text) : null;
+  const srcLang = detected ? detected.code : toModelLang(params.source);
+  const tgtLang = toModelLang(params.target);
 
   if (!srcLang) {
     return Promise.reject(new Error("This source language isn't supported by the on-device model yet."));
@@ -55,6 +55,22 @@ export function translateInBrowser(
   const files: Record<string, { loaded: number; total: number }> = {};
 
   return new Promise((resolve, reject) => {
+    // A worker-level error (e.g. the browser runs out of memory loading the
+    // model on a low-end device) would otherwise leave the UI spinning.
+    const onError = (e: ErrorEvent) => {
+      w.removeEventListener("message", handler);
+      w.removeEventListener("error", onError);
+      reject(
+        new Error(
+          "The translation model couldn't load on this device — it may not have enough memory. Try a desktop browser, or a device with more RAM.",
+        ),
+      );
+      // The worker may be in a bad state; drop it so the next attempt is fresh.
+      worker?.terminate();
+      worker = null;
+      if (e) e.preventDefault?.();
+    };
+
     const handler = (event: MessageEvent) => {
       const msg = event.data;
       // Result/error/translating messages are per-request; ignore other ids.
@@ -81,11 +97,12 @@ export function translateInBrowser(
           break;
         case "result":
           w.removeEventListener("message", handler);
+          w.removeEventListener("error", onError);
           resolve({
             translatedText: msg.text,
             detectedSource: detected ? detected.label : undefined,
             provider: "local",
-            model: "NLLB-200 · on-device",
+            model: "M2M-100 · on-device",
             notes: [
               `Translated entirely in your browser — no text was sent to a server or external service.${
                 msg.device === "webgpu" ? " (GPU-accelerated)" : ""
@@ -95,12 +112,14 @@ export function translateInBrowser(
           break;
         case "error":
           w.removeEventListener("message", handler);
+          w.removeEventListener("error", onError);
           reject(new Error(msg.message || "On-device translation failed."));
           break;
       }
     };
 
     w.addEventListener("message", handler);
+    w.addEventListener("error", onError);
     w.postMessage({ id, text: params.text, src_lang: srcLang, tgt_lang: tgtLang });
   });
 }

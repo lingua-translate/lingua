@@ -337,7 +337,7 @@ export function Translator({
                   local: {
                     label: "On-device",
                     cls: "bg-primary/10 text-primary ring-primary/30",
-                    title: "Translated in your browser with NLLB-200 — no server, no API",
+                    title: "Translated in your browser with M2M-100 — no server, no API",
                   },
                   mock: {
                     label: "Mock",
