@@ -25,7 +25,6 @@ jobs:
     env:
       BUILD_TARGET: pages
       NEXT_PUBLIC_TRANSLATE_MODE: client
-      TRANSLATION_PROVIDER: mymemory
     steps:
       - uses: actions/checkout@v4
 

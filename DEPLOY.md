@@ -2,8 +2,9 @@
 
 The repo is preconfigured. On every push to `main`, a GitHub Actions workflow
 (`.github/workflows/deploy.yml`) builds a static version of the app and
-publishes it to GitHub Pages. In the static build, translation runs in the
-browser via MyMemory (free, no API key).
+publishes it to GitHub Pages. Translation runs entirely in the visitor's
+browser via an on-device model (Transformers.js / NLLB-200) — no API key, no
+backend, and no external translation service.
 
 ## One-time setup
 
@@ -47,7 +48,9 @@ git push
 
 ## Notes
 - The public URL includes the repo name (`/REPO/`) because it's a project page.
-- Translation quality on this build is MyMemory (basic machine translation).
-  To use higher-quality Claude translation you'd deploy to a server host
-  (Vercel, Cloud Run, …) instead, since that needs a private API key — Pages is
-  static-only. The code already supports both.
+- Translation runs on-device: the first translation downloads the NLLB-200
+  model into the visitor's browser (a few hundred MB, one time), which is then
+  cached and works offline. Subsequent translations are fast, and WebGPU is
+  used automatically when available. Nothing is ever sent to a server.
+- For higher-quality Claude translation you can instead deploy to a server host
+  (Vercel, Cloud Run, …) with an API key — the code still supports that path.

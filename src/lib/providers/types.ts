@@ -31,7 +31,7 @@ export interface TranslateResult {
   model?: string;
 }
 
-export type ProviderId = "claude" | "mymemory" | "mock";
+export type ProviderId = "claude" | "local" | "mock";
 
 export interface TranslationProvider {
   readonly id: ProviderId;

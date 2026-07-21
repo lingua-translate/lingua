@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Info,
   SlidersHorizontal,
+  Cpu,
 } from "lucide-react";
 import {
   LANGUAGES,
@@ -23,7 +24,11 @@ import {
 import { MODES, TONES, getMode, styleLabel } from "@/lib/modes";
 import { cn, countWords, formatCount, readingTimeMinutes } from "@/lib/utils";
 import type { TranslateResult } from "@/lib/providers/types";
-import { translateInBrowser, CLIENT_TRANSLATE_MODE } from "@/lib/translate-client";
+import {
+  translateInBrowser,
+  CLIENT_TRANSLATE_MODE,
+  type ClientProgress,
+} from "@/lib/translate-client";
 import { Dropdown, type DropdownItem } from "@/components/ui/Dropdown";
 
 const STAGES = [
@@ -75,6 +80,7 @@ export function Translator({
   const [result, setResult] = useState<TranslateResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [stageIndex, setStageIndex] = useState(0);
+  const [progress, setProgress] = useState<ClientProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -145,12 +151,13 @@ export function Translator({
     setLoading(true);
     setError(null);
     setResult(null);
+    setProgress(null);
     try {
       const params = { text, source, target, mode, tone, style };
       let data: TranslateResult;
       if (CLIENT_TRANSLATE_MODE) {
-        // Static build: translate directly in the browser via MyMemory.
-        data = await translateInBrowser(params);
+        // Deployed build: translate on-device in the browser (Transformers.js).
+        data = await translateInBrowser(params, setProgress);
       } else {
         const res = await fetch("/api/translate", {
           method: "POST",
@@ -167,6 +174,7 @@ export function Translator({
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
@@ -326,10 +334,10 @@ export function Translator({
                     cls: "bg-accent/10 text-accent ring-accent/30",
                     title: `Translated by ${result.model}`,
                   },
-                  mymemory: {
-                    label: "MyMemory",
+                  local: {
+                    label: "On-device",
                     cls: "bg-primary/10 text-primary ring-primary/30",
-                    title: "Free machine translation via MyMemory",
+                    title: "Translated in your browser with NLLB-200 — no server, no API",
                   },
                   mock: {
                     label: "Mock",
@@ -362,7 +370,11 @@ export function Translator({
 
           <div className="relative flex-1 overflow-y-auto scrollbar-slim">
             {loading ? (
-              <StageProgress index={stageIndex} />
+              CLIENT_TRANSLATE_MODE ? (
+                <ModelProgress progress={progress} />
+              ) : (
+                <StageProgress index={stageIndex} />
+              )
             ) : result ? (
               <div
                 className="whitespace-pre-wrap px-4 py-3.5 text-[15px] leading-relaxed text-foreground use-script-font"
@@ -404,9 +416,11 @@ export function Translator({
       {/* Action bar */}
       <div className="sticky bottom-4 z-10 flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface/95 p-3 shadow-panel backdrop-blur">
         <p className="hidden text-xs text-muted sm:block">
-          {result?.confidence != null
-            ? `Confidence ${Math.round(result.confidence * 100)}% · reviewed before delivery`
-            : "Analyse · translate · review — every request runs the full pipeline."}
+          {CLIENT_TRANSLATE_MODE
+            ? "Runs entirely in your browser — no server, no API key, private by design."
+            : result?.confidence != null
+              ? `Confidence ${Math.round(result.confidence * 100)}% · reviewed before delivery`
+              : "Analyse · translate · review — every request runs the full pipeline."}
         </p>
         <button onClick={translate} disabled={!canTranslate} className="btn-primary ml-auto min-w-[9rem] px-6 py-2.5">
           {loading ? (
@@ -420,6 +434,69 @@ export function Translator({
           )}
         </button>
       </div>
+    </div>
+  );
+}
+
+function formatMB(bytes?: number): string {
+  if (!bytes) return "";
+  return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+}
+
+function ModelProgress({ progress }: { progress: ClientProgress | null }) {
+  const downloading = progress?.stage === "downloading";
+  const pct = Math.min(100, Math.round(progress?.percent ?? 0));
+
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+        {downloading ? (
+          <Download className="h-5 w-5" aria-hidden />
+        ) : (
+          <Cpu className="h-5 w-5" aria-hidden />
+        )}
+      </div>
+
+      {downloading ? (
+        <>
+          <div>
+            <p className="text-sm font-medium text-foreground">Preparing the translation model</p>
+            <p className="mt-1 text-xs text-muted">
+              One-time download, then it&rsquo;s cached and runs offline on your device.
+            </p>
+          </div>
+          <div className="w-full max-w-xs">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-300"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="mt-1.5 flex justify-between text-[11px] text-muted">
+              <span>{pct}%</span>
+              {progress?.totalBytes ? (
+                <span>
+                  {formatMB(progress.loadedBytes)} / {formatMB(progress.totalBytes)}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center gap-2 text-sm text-foreground">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden />
+          <span>
+            Translating on your device
+            {progress?.totalChunks && progress.totalChunks > 1
+              ? ` · ${progress.done ?? 0}/${progress.totalChunks}`
+              : "…"}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
