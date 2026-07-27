@@ -237,7 +237,9 @@ async function geminiTranslate(params: TranslateParams): Promise<TranslateResult
     `<text>\n${params.text}\n</text>`,
   ].join("\n");
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(
+  // "gemini-flash-latest" tracks the current free-tier Flash model; specific
+  // versioned ids (e.g. gemini-2.0-flash) can have a 0 free-tier quota per account.
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(
     GEMINI_KEY as string,
   )}`;
 
