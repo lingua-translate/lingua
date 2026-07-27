@@ -3,9 +3,10 @@
 The repo is preconfigured. On every push to `main`, a GitHub Actions workflow
 (`.github/workflows/deploy.yml`) builds a static version of the app and
 publishes it to GitHub Pages. Translation runs client-side by calling free
-public translation APIs (MyMemory, with Lingva as a fallback) directly from the
-browser — no API key, no backend, and no install. This works on any device,
-including phones and low-memory laptops.
+public translation APIs directly from the browser — Google (primary, real
+machine translation) with Lingva and MyMemory as fallbacks — no API key, no
+backend, and no install. This works on any device, including phones and
+low-memory laptops.
 
 ## One-time setup
 
@@ -49,9 +50,10 @@ git push
 
 ## Notes
 - The public URL includes the repo name (`/REPO/`) because it's a project page.
-- Translation calls free public APIs from the browser: MyMemory first (stable,
-  CORS-enabled, no key), falling back to Lingva if MyMemory is unavailable or
-  hits its daily per-network limit. Every request has a 10s timeout, so the UI
-  never hangs; if all providers fail, a clear error is shown.
+- Translation calls free public APIs from the browser: Google first (real
+  machine translation, best quality, CORS-verified), then Lingva, then MyMemory
+  as a last resort. MyMemory is crowd-sourced and mangles single words, so it's
+  intentionally last. Every request has a 10s timeout, so the UI never hangs;
+  if all providers fail, a clear error is shown.
 - For higher-quality Claude translation you can instead deploy to a server host
   (Vercel, Cloud Run, …) with an API key — the code still supports that path.

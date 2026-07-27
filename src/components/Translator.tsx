@@ -333,15 +333,20 @@ export function Translator({
                     cls: "bg-accent/10 text-accent ring-accent/30",
                     title: `Translated by ${result.model}`,
                   },
-                  mymemory: {
-                    label: "MyMemory",
+                  google: {
+                    label: "Google",
                     cls: "bg-primary/10 text-primary ring-primary/30",
-                    title: "Translated via MyMemory — free online translation",
+                    title: "Translated via Google — free online translation",
                   },
                   lingva: {
                     label: "Lingva",
                     cls: "bg-primary/10 text-primary ring-primary/30",
                     title: "Translated via Lingva — free online translation",
+                  },
+                  mymemory: {
+                    label: "MyMemory",
+                    cls: "bg-primary/10 text-primary ring-primary/30",
+                    title: "Translated via MyMemory — free online translation",
                   },
                   mock: {
                     label: "Mock",

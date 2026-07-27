@@ -24,7 +24,7 @@ export interface ClientProgress {
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_CHUNK = 450; // keep each request small (MyMemory ~500-byte limit)
 
-type ProviderId = "mymemory" | "lingva";
+type ProviderId = "google" | "lingva" | "mymemory";
 
 interface Provider {
   id: ProviderId;
@@ -47,35 +47,34 @@ function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, ms: number): Pr
 
 const PROVIDERS: Provider[] = [
   {
-    // Primary: stable, CORS-enabled, no key. Proven to work from the live site.
-    id: "mymemory",
-    label: "MyMemory",
-    async translateChunk(text, src, tgt, _isAuto, signal) {
-      const url = new URL("https://api.mymemory.translated.net/get");
+    // Primary: real machine translation (Google). Best quality, fast, and
+    // CORS-verified from the deployed origin. Handles "auto" source natively.
+    id: "google",
+    label: "Google",
+    async translateChunk(text, src, tgt, isAuto, signal) {
+      const url = new URL("https://translate.googleapis.com/translate_a/single");
+      url.searchParams.set("client", "gtx");
+      url.searchParams.set("sl", isAuto ? "auto" : src);
+      url.searchParams.set("tl", tgt);
+      url.searchParams.set("dt", "t");
       url.searchParams.set("q", text);
-      url.searchParams.set("langpair", `${src}|${tgt}`);
       const res = await fetch(url.toString(), { signal });
-      if (!res.ok) throw new Error(`MyMemory HTTP ${res.status}`);
+      if (!res.ok) throw new Error(`Google HTTP ${res.status}`);
       const data = await res.json();
-      const out = data?.responseData?.translatedText ?? "";
-      const status = data?.responseStatus;
-      if (
-        !out ||
-        /MYMEMORY WARNING|YOU USED ALL|INVALID|SELECT TWO DISTINCT|QUERY LENGTH/i.test(out) ||
-        (typeof status === "number" && status !== 200)
-      ) {
-        throw new Error(out || `MyMemory status ${status}`);
-      }
-      return decodeEntities(out);
+      // Shape: [ [ [translatedSegment, sourceSegment, ...], ... ], ..., detectedLang ]
+      const segments = Array.isArray(data?.[0]) ? data[0] : [];
+      const out = segments.map((s: unknown[]) => (Array.isArray(s) ? s[0] : "")).join("");
+      if (!out) throw new Error("Google: empty response");
+      return out;
     },
   },
   {
-    // Fallback: Lingva (Google-quality, CORS-enabled). Tried only if MyMemory
-    // fails (e.g. daily limit). Best-effort across a couple of public instances.
+    // Fallback: Lingva (also Google-backed, CORS-enabled). Best-effort across
+    // a couple of public instances.
     id: "lingva",
     label: "Lingva",
     async translateChunk(text, src, tgt, isAuto, signal) {
-      const instances = ["https://lingva.ml", "https://translate.plausibility.cloud"];
+      const instances = ["https://lingva.ml", "https://lingva.garudalinux.org"];
       const sl = isAuto ? "auto" : src;
       let lastErr: unknown;
       for (const base of instances) {
@@ -97,6 +96,32 @@ const PROVIDERS: Provider[] = [
         }
       }
       throw lastErr instanceof Error ? lastErr : new Error("Lingva failed");
+    },
+  },
+  {
+    // Last resort: MyMemory (crowd-sourced translation memory). Always
+    // available, but lower quality for short inputs — used only if the real MT
+    // engines above are unreachable. NFKC repairs any broken presentation-form
+    // characters it occasionally returns.
+    id: "mymemory",
+    label: "MyMemory",
+    async translateChunk(text, src, tgt, _isAuto, signal) {
+      const url = new URL("https://api.mymemory.translated.net/get");
+      url.searchParams.set("q", text);
+      url.searchParams.set("langpair", `${src}|${tgt}`);
+      const res = await fetch(url.toString(), { signal });
+      if (!res.ok) throw new Error(`MyMemory HTTP ${res.status}`);
+      const data = await res.json();
+      const out = data?.responseData?.translatedText ?? "";
+      const status = data?.responseStatus;
+      if (
+        !out ||
+        /MYMEMORY WARNING|YOU USED ALL|INVALID|SELECT TWO DISTINCT|QUERY LENGTH/i.test(out) ||
+        (typeof status === "number" && status !== 200)
+      ) {
+        throw new Error(out || `MyMemory status ${status}`);
+      }
+      return decodeEntities(out).normalize("NFKC");
     },
   },
 ];
