@@ -333,6 +333,11 @@ export function Translator({
                     cls: "bg-accent/10 text-accent ring-accent/30",
                     title: `Translated by ${result.model}`,
                   },
+                  gemini: {
+                    label: "Gemini · tone",
+                    cls: "bg-accent/10 text-accent ring-accent/30",
+                    title: `Translated by Google Gemini with the selected tone`,
+                  },
                   google: {
                     label: "Google",
                     cls: "bg-primary/10 text-primary ring-primary/30",

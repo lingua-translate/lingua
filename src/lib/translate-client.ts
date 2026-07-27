@@ -1,5 +1,6 @@
 import type { TranslateParams, TranslateResult } from "./providers/types";
-import { AUTO_DETECT } from "./languages";
+import { AUTO_DETECT, getLanguage, languageInstruction } from "./languages";
+import { getMode, styleLabel } from "./modes";
 import { toModelLang, detectModelLang } from "./model-langs";
 
 /**
@@ -22,7 +23,14 @@ export interface ClientProgress {
 }
 
 const FETCH_TIMEOUT_MS = 10_000;
+const GEMINI_TIMEOUT_MS = 25_000; // the AI model can take a few seconds
 const MAX_CHUNK = 450; // keep each request small (MyMemory ~500-byte limit)
+
+// Optional AI backend for tone-aware translation. When a specific tone is
+// chosen and this key is configured, we use Google Gemini (free tier) so the
+// Tone/Mode/Style controls genuinely change the output. Without it, or if it
+// fails, translation falls back to the plain machine-translation chain below.
+const GEMINI_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
 
 type ProviderId = "google" | "lingva" | "mymemory";
 
@@ -130,6 +138,18 @@ export async function translateInBrowser(
   params: TranslateParams,
   onProgress?: (p: ClientProgress) => void,
 ): Promise<TranslateResult> {
+  // Tone-aware path: a real AI model rewrites in the requested register.
+  // Only used when the user picks a specific (non-Automatic) tone AND a key is
+  // configured. On any failure we fall through to plain machine translation.
+  if (GEMINI_KEY && params.tone && params.tone !== "Automatic") {
+    try {
+      onProgress?.({ stage: "translating" });
+      return await geminiTranslate(params);
+    } catch {
+      // fall through to the machine-translation chain
+    }
+  }
+
   const isAuto = params.source === AUTO_DETECT.code;
   const detected = isAuto ? detectModelLang(params.text) : null;
   const src = detected ? detected.code : toModelLang(params.source);
@@ -193,6 +213,60 @@ export async function translateInBrowser(
   throw new Error(
     "Couldn't reach the translation service. Check your internet connection and try again.",
   );
+}
+
+/**
+ * Tone-aware translation via Google Gemini (free tier). The tone, mode, and
+ * style controls are folded into the prompt so they actually shape the output.
+ */
+async function geminiTranslate(params: TranslateParams): Promise<TranslateResult> {
+  const target = getLanguage(params.target);
+  const source =
+    params.source === AUTO_DETECT.code ? null : getLanguage(params.source);
+  const mode = getMode(params.mode);
+  const style = typeof params.style === "number" ? params.style : mode.defaultStyle;
+
+  const prompt = [
+    `You are an expert professional translator. Translate the text between <text></text> into ${languageInstruction(target)}.`,
+    source
+      ? `The source language is ${languageInstruction(source)}.`
+      : `Detect the source language automatically.`,
+    `Tone and register to use: ${params.tone}. ${mode.guidance}`,
+    `Naturalness: aim for "${styleLabel(style)}".`,
+    `Rules: Output ONLY the translated text — no quotes, notes, or explanations. Preserve line breaks and formatting. Never alter placeholders like {name}, {{var}}, %s, or URLs. Apply the requested tone consistently: for formal tones use formal grammar and honorifics; for friendly or warm tones use natural, conversational phrasing.`,
+    `<text>\n${params.text}\n</text>`,
+  ].join("\n");
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(
+    GEMINI_KEY as string,
+  )}`;
+
+  const data = await withTimeout(async (signal) => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.4 },
+      }),
+      signal,
+    });
+    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+    return res.json();
+  }, GEMINI_TIMEOUT_MS);
+
+  const parts = data?.candidates?.[0]?.content?.parts;
+  const text = Array.isArray(parts)
+    ? parts.map((p: { text?: string }) => p.text ?? "").join("").trim()
+    : "";
+  if (!text) throw new Error("Gemini: empty response");
+
+  return {
+    translatedText: text,
+    provider: "gemini",
+    model: "Gemini",
+    notes: [`Translated by Google Gemini in a ${String(params.tone).toLowerCase()} tone.`],
+  };
 }
 
 /** Split text into small chunks on sentence/whitespace boundaries. */

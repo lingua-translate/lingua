@@ -25,6 +25,9 @@ jobs:
     env:
       BUILD_TARGET: pages
       NEXT_PUBLIC_TRANSLATE_MODE: client
+      # Optional: set a GEMINI_API_KEY repo secret to enable tone-aware
+      # translation. If unset, the app falls back to plain machine translation.
+      NEXT_PUBLIC_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
