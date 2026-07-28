@@ -20,8 +20,10 @@ export interface TranslateParams {
 
 export interface TranslateResult {
   translatedText: string;
-  /** Detected source language code when source was "auto". */
+  /** Detected source language name (for display) when source was "auto". */
   detectedSource?: string;
+  /** Detected source language as an app language code (for the swap button). */
+  detectedCode?: string;
   /** 0–1 confidence in the overall translation, when the provider reports it. */
   confidence?: number;
   /** Short human-readable notes the model chose to surface (optional). */

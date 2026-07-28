@@ -1,7 +1,7 @@
 import type { TranslateParams, TranslateResult } from "./providers/types";
 import { AUTO_DETECT, getLanguage, languageInstruction } from "./languages";
 import { getMode, styleLabel } from "./modes";
-import { toModelLang, detectModelLang, isoName } from "./model-langs";
+import { toModelLang, detectModelLang, isoName, isoToAppCode } from "./model-langs";
 
 /**
  * Browser-side translation using free public translation APIs, called directly
@@ -205,9 +205,13 @@ export async function translateInBrowser(
       const detectedSource = isAuto
         ? isoName(providerDetected) ?? detected?.label
         : undefined;
+      const detectedCode = isAuto
+        ? isoToAppCode(providerDetected) ?? isoToAppCode(detected?.code)
+        : undefined;
       return {
         translatedText: parts.join(""),
         detectedSource,
+        detectedCode,
         provider: provider.id,
         model: provider.label,
       };

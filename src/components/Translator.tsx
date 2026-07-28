@@ -22,10 +22,12 @@ import {
 import { cn, countWords, formatCount, readingTimeMinutes } from "@/lib/utils";
 import type { TranslateResult } from "@/lib/providers/types";
 import { translateInBrowser } from "@/lib/translate-client";
+import { extractDocument } from "@/lib/documents";
 import { Dropdown, type DropdownItem } from "@/components/ui/Dropdown";
 
-/** Files we can read as plain text in the browser (no backend needed). */
-const TEXT_FILE_RE = /\.(txt|text|md|markdown|csv|tsv|json|log|srt|vtt|xml|html?)$/i;
+/** File types offered in the picker (text now; PDF/DOCX show a "coming soon"). */
+const FILE_ACCEPT =
+  ".txt,.text,.md,.markdown,.csv,.tsv,.json,.log,.srt,.vtt,.xml,.html,.htm,.pdf,.docx,.doc,text/*";
 /** How long to wait after the user stops typing before auto-translating. */
 const DEBOUNCE_MS = 450;
 
@@ -109,10 +111,19 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
   const words = countWords(text);
   const chars = text.length;
 
+  // The language we'd treat as "source" when swapping — the chosen source, or
+  // the detected language when the field is left on "Detect language".
+  const effectiveSource =
+    source === AUTO_DETECT.code ? result?.detectedCode : source;
+  const canSwap = Boolean(effectiveSource) && effectiveSource !== target;
+
   const swap = () => {
-    if (source === AUTO_DETECT.code) return;
+    if (!effectiveSource) return;
+    // Reverse the pair and move the translation into the input so it becomes
+    // the new source text (which then auto-translates back). The detected
+    // label updates automatically once the new source is a concrete language.
     setSource(target);
-    setTarget(source);
+    setTarget(effectiveSource);
     if (result) setText(result.translatedText);
   };
 
@@ -124,20 +135,14 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
   };
 
   async function handleFile(file: File) {
-    if (!TEXT_FILE_RE.test(file.name) && !file.type.startsWith("text/")) {
-      setError(
-        "Please upload a plain-text file (.txt, .md, .csv…). PDF and Word documents with formatting will be supported soon.",
-      );
+    const doc = await extractDocument(file);
+    if (!doc.supported) {
+      setError(doc.message ?? "Unsupported file type.");
       return;
     }
-    try {
-      const content = await file.text();
-      setError(null);
-      setFileName(file.name.replace(/\.[^.]+$/, ""));
-      setText(content);
-    } catch {
-      setError("Couldn't read that file. Try a different plain-text file.");
-    }
+    setError(null);
+    setFileName(doc.baseName);
+    setText(doc.text);
   }
 
   const onDrop = (e: React.DragEvent) => {
@@ -187,10 +192,10 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
         />
         <button
           onClick={swap}
-          disabled={source === AUTO_DETECT.code}
-          className="btn-ghost mx-auto h-10 w-10 shrink-0 rounded-full border border-border disabled:opacity-40 sm:mx-0"
-          aria-label="Swap languages"
-          title={source === AUTO_DETECT.code ? "Choose a source language to swap" : "Swap languages"}
+          disabled={!canSwap}
+          className="btn-ghost mx-auto h-10 w-10 shrink-0 rounded-full border border-border transition-transform hover:rotate-180 disabled:rotate-0 disabled:opacity-40 sm:mx-0"
+          aria-label="Swap source and target languages"
+          title={canSwap ? "Swap languages" : "Type some text to swap"}
         >
           <ArrowLeftRight className="h-4 w-4" aria-hidden />
         </button>
@@ -247,7 +252,7 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".txt,.text,.md,.markdown,.csv,.tsv,.json,.log,.srt,.vtt,.xml,.html,text/*"
+            accept={FILE_ACCEPT}
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];

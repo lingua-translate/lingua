@@ -54,6 +54,25 @@ export function isoName(code?: string): string | undefined {
 }
 
 /**
+ * Reverse mapping: pick a sensible default app language code for an ISO code
+ * reported by the detector. Used so the swap button can reverse a translation
+ * even when the source was left on "Detect language".
+ */
+const ISO_TO_APP: Record<string, string> = {
+  en: "en-US", fr: "fr-FR", es: "es-ES", de: "de-DE", ar: "ar-MSA",
+  it: "it-IT", pt: "pt-BR", nl: "nl-NL", ru: "ru-RU", tr: "tr-TR",
+  fa: "fa-IR", ur: "ur-PK", hi: "hi-IN", bn: "bn-BD", ja: "ja-JP",
+  ko: "ko-KR", id: "id-ID", th: "th-TH",
+  zh: "zh-Hans", "zh-cn": "zh-Hans", "zh-tw": "zh-Hant",
+};
+
+export function isoToAppCode(code?: string): string | undefined {
+  if (!code) return undefined;
+  const c = code.toLowerCase();
+  return ISO_TO_APP[c] || ISO_TO_APP[c.split("-")[0]];
+}
+
+/**
  * Best-effort source detection by dominant script (the model needs an explicit
  * source). Returns a model language code plus an English label for the UI.
  */
