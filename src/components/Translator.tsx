@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Upload,
   Languages,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   LANGUAGES,
@@ -20,6 +21,7 @@ import {
   type Language,
 } from "@/lib/languages";
 import { cn, countWords, formatCount, readingTimeMinutes } from "@/lib/utils";
+import { TONES } from "@/lib/modes";
 import type { TranslateResult } from "@/lib/providers/types";
 import { translateInBrowser } from "@/lib/translate-client";
 import { extractDocument } from "@/lib/documents";
@@ -52,6 +54,7 @@ export interface TranslatorProps {
 export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
   const [source, setSource] = useState(AUTO_DETECT.code);
   const [target, setTarget] = useState(initialTarget);
+  const [tone, setTone] = useState<string>("Automatic");
   const [text, setText] = useState("");
   const [result, setResult] = useState<TranslateResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,6 +65,10 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
 
   const sourceItems = useMemo(() => langItems(true), []);
   const targetItems = useMemo(() => langItems(false), []);
+  const toneItems: DropdownItem[] = useMemo(
+    () => TONES.map((t) => ({ value: t, label: t })),
+    [],
+  );
   const targetLang: Language = getLanguage(target);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reqIdRef = useRef(0);
@@ -94,7 +101,7 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
           source,
           target,
           mode: "professional",
-          tone: "Automatic",
+          tone,
         });
         if (reqIdRef.current !== id) return;
         setResult(data);
@@ -106,7 +113,7 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
       }
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [text, source, target]);
+  }, [text, source, target, tone]);
 
   const words = countWords(text);
   const chars = text.length;
@@ -208,6 +215,26 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
           align="end"
           widthClass="w-72"
         />
+      </div>
+
+      {/* Tone */}
+      <div className="card flex flex-wrap items-center gap-x-3 gap-y-2 p-2.5 sm:p-3">
+        <span className="flex items-center gap-1.5 px-0.5 text-xs font-semibold uppercase tracking-wide text-muted">
+          <SlidersHorizontal className="h-3.5 w-3.5 text-accent" aria-hidden />
+          Tone
+        </span>
+        <Dropdown
+          items={toneItems}
+          value={tone}
+          onChange={setTone}
+          ariaLabel="Tone"
+          widthClass="w-56"
+        />
+        <span className="text-xs text-muted">
+          {tone === "Automatic"
+            ? "Matches the source automatically"
+            : `Rewriting in a ${tone.toLowerCase()} tone`}
+        </span>
       </div>
 
       {/* Editor panels */}
