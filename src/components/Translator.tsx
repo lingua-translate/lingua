@@ -21,7 +21,7 @@ import {
   type Language,
 } from "@/lib/languages";
 import { cn, countWords, formatCount, readingTimeMinutes } from "@/lib/utils";
-import { TONES } from "@/lib/modes";
+import { MODES, TONES, getMode, styleLabel } from "@/lib/modes";
 import type { TranslateResult } from "@/lib/providers/types";
 import { translateInBrowser } from "@/lib/translate-client";
 import { extractDocument } from "@/lib/documents";
@@ -54,7 +54,10 @@ export interface TranslatorProps {
 export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
   const [source, setSource] = useState(AUTO_DETECT.code);
   const [target, setTarget] = useState(initialTarget);
+  const [mode, setMode] = useState("professional");
   const [tone, setTone] = useState<string>("Automatic");
+  const [style, setStyle] = useState(getMode("professional").defaultStyle);
+  const [styleTouched, setStyleTouched] = useState(false);
   const [text, setText] = useState("");
   const [result, setResult] = useState<TranslateResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -69,6 +72,11 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
     () => TONES.map((t) => ({ value: t, label: t })),
     [],
   );
+  const modeItems: DropdownItem[] = useMemo(
+    () => MODES.map((m) => ({ value: m.id, label: m.name, sublabel: m.description })),
+    [],
+  );
+  const activeMode = getMode(mode);
   const targetLang: Language = getLanguage(target);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reqIdRef = useRef(0);
@@ -78,6 +86,12 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
     const to = new URLSearchParams(window.location.search).get("to");
     if (to && LANGUAGES.some((l) => l.code === to)) setTarget(to);
   }, []);
+
+  // Each mode has a default style; reset to it when the mode changes, unless
+  // the user has moved the slider themselves.
+  useEffect(() => {
+    if (!styleTouched) setStyle(getMode(mode).defaultStyle);
+  }, [mode, styleTouched]);
 
   // Auto-translate: whenever the text or languages change, translate after a
   // short pause. The previous result stays on screen until the new one lands,
@@ -96,13 +110,7 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
       setLoading(true);
       setError(null);
       try {
-        const data = await translateInBrowser({
-          text,
-          source,
-          target,
-          mode: "professional",
-          tone,
-        });
+        const data = await translateInBrowser({ text, source, target, mode, tone, style });
         if (reqIdRef.current !== id) return;
         setResult(data);
       } catch (e) {
@@ -113,7 +121,7 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
       }
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [text, source, target, tone]);
+  }, [text, source, target, mode, tone, style]);
 
   const words = countWords(text);
   const chars = text.length;
@@ -217,24 +225,51 @@ export function Translator({ initialTarget = "ar-MSA" }: TranslatorProps) {
         />
       </div>
 
-      {/* Tone */}
-      <div className="card flex flex-wrap items-center gap-x-3 gap-y-2 p-2.5 sm:p-3">
-        <span className="flex items-center gap-1.5 px-0.5 text-xs font-semibold uppercase tracking-wide text-muted">
-          <SlidersHorizontal className="h-3.5 w-3.5 text-accent" aria-hidden />
-          Tone
-        </span>
-        <Dropdown
-          items={toneItems}
-          value={tone}
-          onChange={setTone}
-          ariaLabel="Tone"
-          widthClass="w-56"
-        />
-        <span className="text-xs text-muted">
-          {tone === "Automatic"
-            ? "Matches the source automatically"
-            : `Rewriting in a ${tone.toLowerCase()} tone`}
-        </span>
+      {/* Translation controls: mode, tone, and the literal↔natural style */}
+      <div className="card flex flex-col gap-3 p-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="px-0.5 text-xs font-medium text-muted">Translation mode</span>
+            <Dropdown items={modeItems} value={mode} onChange={setMode} ariaLabel="Translation mode" widthClass="w-80" />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="px-0.5 text-xs font-medium text-muted">Tone</span>
+            <Dropdown items={toneItems} value={tone} onChange={setTone} ariaLabel="Tone" align="end" widthClass="w-56" />
+          </label>
+        </div>
+
+        <p className="flex items-start gap-1.5 px-0.5 text-xs text-muted">
+          <activeMode.icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+          <span>
+            <span className="font-medium text-foreground">{activeMode.name}:</span> {activeMode.useCase}
+          </span>
+        </p>
+
+        <div className="rounded-xl bg-surface-2 p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-muted">
+              <SlidersHorizontal className="h-3.5 w-3.5 text-accent" aria-hidden />
+              Translation style
+            </span>
+            <span className="text-xs font-semibold text-foreground">{styleLabel(style)}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={style}
+            onChange={(e) => {
+              setStyle(Number(e.target.value));
+              setStyleTouched(true);
+            }}
+            className="w-full accent-primary"
+            aria-label="Translation style from literal to natural"
+          />
+          <div className="mt-1 flex justify-between text-[11px] text-muted">
+            <span>Literal</span>
+            <span>Natural</span>
+          </div>
+        </div>
       </div>
 
       {/* Editor panels */}

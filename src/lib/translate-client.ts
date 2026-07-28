@@ -148,10 +148,14 @@ export async function translateInBrowser(
   params: TranslateParams,
   onProgress?: (p: ClientProgress) => void,
 ): Promise<TranslateResult> {
-  // Tone-aware path: a real AI model rewrites in the requested register.
-  // Only used when the user picks a specific (non-Automatic) tone AND a key is
-  // configured. On any failure we fall through to plain machine translation.
-  if (GEMINI_KEY && params.tone && params.tone !== "Automatic") {
+  // AI path: a real model rewrites for the chosen mode, tone, and style. Used
+  // when the user picks a specific tone OR a non-default mode (so the mode and
+  // style slider genuinely shape the output). The default (Professional mode +
+  // Automatic tone) stays on fast machine translation. Falls through on failure.
+  const wantsAI =
+    (params.tone && params.tone !== "Automatic") ||
+    (params.mode && params.mode !== "professional");
+  if (GEMINI_KEY && wantsAI) {
     try {
       onProgress?.({ stage: "translating" });
       return await geminiTranslate(params);
