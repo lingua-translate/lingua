@@ -63,8 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <div className="truncate font-display text-lg leading-tight text-foreground">Lingua</div>
-              <div className="marker truncate">AI Translation</div>
+              <div className="truncate font-display text-xl leading-tight text-foreground">Lingua</div>
             </div>
           )}
         </div>

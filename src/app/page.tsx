@@ -15,7 +15,7 @@ const CAPABILITIES = [
   {
     icon: Layers,
     title: "Meaning, not words",
-    body: "Each request is analysed, translated, then self-reviewed — so it reads as if written by a native, not decoded.",
+    body: "Translations read naturally in the target language — meaning first, never a stiff word-for-word swap.",
   },
   {
     icon: Type,
@@ -29,8 +29,8 @@ const CAPABILITIES = [
   },
   {
     icon: ShieldCheck,
-    title: "Private by default",
-    body: "Your text is sent only to translate this request, and is never used to train a model.",
+    title: "No sign-up, no fuss",
+    body: "Open the page and translate — nothing to install, no account, and it works on any device.",
   },
 ];
 
@@ -41,7 +41,7 @@ export default function HomePage() {
       <section className="grid items-center gap-10 py-12 md:py-16 lg:grid-cols-12 lg:gap-12">
         <div className="lg:col-span-5">
           <span className="marker">
-            AI Translation
+            Instant translation
             <span className="mx-2 text-border">/</span>
             {LANGUAGES.length} languages
           </span>

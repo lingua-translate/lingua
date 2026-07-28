@@ -35,6 +35,24 @@ export function toModelLang(code: string): string | undefined {
   return MODEL_LANG[code];
 }
 
+/** Human-readable name for an ISO code returned by the translation APIs. */
+const ISO_NAMES: Record<string, string> = {
+  en: "English", fr: "French", es: "Spanish", de: "German", ar: "Arabic",
+  it: "Italian", pt: "Portuguese", nl: "Dutch", ru: "Russian", tr: "Turkish",
+  fa: "Persian", ur: "Urdu", hi: "Hindi", bn: "Bengali", ja: "Japanese",
+  ko: "Korean", id: "Indonesian", th: "Thai", he: "Hebrew", iw: "Hebrew",
+  pl: "Polish", sv: "Swedish", uk: "Ukrainian", el: "Greek", vi: "Vietnamese",
+  ro: "Romanian", cs: "Czech", da: "Danish", fi: "Finnish", no: "Norwegian",
+  hu: "Hungarian", ms: "Malay", ta: "Tamil", te: "Telugu",
+  zh: "Chinese", "zh-cn": "Chinese", "zh-tw": "Chinese (Traditional)",
+};
+
+export function isoName(code?: string): string | undefined {
+  if (!code) return undefined;
+  const c = code.toLowerCase();
+  return ISO_NAMES[c] || ISO_NAMES[c.split("-")[0]] || code.toUpperCase();
+}
+
 /**
  * Best-effort source detection by dominant script (the model needs an explicit
  * source). Returns a model language code plus an English label for the UI.

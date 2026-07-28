@@ -8,8 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Monitor, Moon, Sun } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Moon, Sun } from "lucide-react";
 
 type Theme = "light" | "dark" | "system";
 const STORAGE_KEY = "lingua-theme";
@@ -80,41 +79,32 @@ export function useTheme() {
   return ctx;
 }
 
-const OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
-];
-
+/**
+ * A single light/dark toggle. There is no manual "device" or "system" button —
+ * the layout is fully responsive on its own, and the theme simply flips between
+ * light and dark (starting from the visitor's OS preference).
+ */
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsDark(document.documentElement.classList.contains("dark"));
+    check();
+    const mo = new MutationObserver(check);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => mo.disconnect();
+  }, []);
+
   return (
-    <div
-      role="radiogroup"
-      aria-label="Colour theme"
-      className="inline-flex items-center gap-0.5 rounded-xl border border-border bg-surface-2 p-0.5"
+    <button
+      type="button"
+      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      title={isDark ? "Light mode" : "Dark mode"}
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface-2 text-muted transition-colors hover:text-foreground"
     >
-      {OPTIONS.map(({ value, label, icon: Icon }) => {
-        const active = theme === value;
-        return (
-          <button
-            key={value}
-            role="radio"
-            aria-checked={active}
-            aria-label={label}
-            title={label}
-            onClick={() => setTheme(value)}
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-              active
-                ? "bg-surface text-primary shadow-card"
-                : "text-muted hover:text-foreground",
-            )}
-          >
-            <Icon className="h-4 w-4" aria-hidden />
-          </button>
-        );
-      })}
-    </div>
+      {isDark ? <Sun className="h-4 w-4" aria-hidden /> : <Moon className="h-4 w-4" aria-hidden />}
+    </button>
   );
 }

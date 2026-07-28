@@ -1,7 +1,7 @@
 import type { TranslateParams, TranslateResult } from "./providers/types";
 import { AUTO_DETECT, getLanguage, languageInstruction } from "./languages";
 import { getMode, styleLabel } from "./modes";
-import { toModelLang, detectModelLang } from "./model-langs";
+import { toModelLang, detectModelLang, isoName } from "./model-langs";
 
 /**
  * Browser-side translation using free public translation APIs, called directly
@@ -34,6 +34,12 @@ const GEMINI_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
 
 type ProviderId = "google" | "lingva" | "mymemory";
 
+interface ChunkResult {
+  text: string;
+  /** Detected source language (ISO code), when the provider reports it. */
+  detected?: string;
+}
+
 interface Provider {
   id: ProviderId;
   label: string;
@@ -43,7 +49,7 @@ interface Provider {
     tgt: string,
     isAuto: boolean,
     signal: AbortSignal,
-  ) => Promise<string>;
+  ) => Promise<ChunkResult>;
 }
 
 /** Run a fetch-based task with a hard timeout so the UI can never hang. */
@@ -73,7 +79,8 @@ const PROVIDERS: Provider[] = [
       const segments = Array.isArray(data?.[0]) ? data[0] : [];
       const out = segments.map((s: unknown[]) => (Array.isArray(s) ? s[0] : "")).join("");
       if (!out) throw new Error("Google: empty response");
-      return out;
+      const detected = typeof data?.[2] === "string" ? data[2] : undefined;
+      return { text: out, detected };
     },
   },
   {
@@ -96,7 +103,10 @@ const PROVIDERS: Provider[] = [
             continue;
           }
           const data = await res.json();
-          if (data?.translation) return data.translation as string;
+          if (data?.translation) {
+            const detected = data?.info?.detectedSource;
+            return { text: data.translation as string, detected };
+          }
           lastErr = new Error("Lingva: empty response");
         } catch (e) {
           lastErr = e;
@@ -129,7 +139,7 @@ const PROVIDERS: Provider[] = [
       ) {
         throw new Error(out || `MyMemory status ${status}`);
       }
-      return decodeEntities(out).normalize("NFKC");
+      return { text: decodeEntities(out).normalize("NFKC") };
     },
   },
 ];
@@ -175,28 +185,31 @@ export async function translateInBrowser(
   for (const provider of PROVIDERS) {
     try {
       const parts: string[] = [];
+      let providerDetected: string | undefined;
       let done = 0;
       for (const chunk of chunks) {
         if (!chunk.trim()) {
           parts.push(chunk); // preserve blank lines / spacing verbatim
           continue;
         }
-        const translated = await withTimeout(
+        const r = await withTimeout(
           (signal) => provider.translateChunk(chunk, src, tgt, isAuto, signal),
           FETCH_TIMEOUT_MS,
         );
-        parts.push(translated);
+        parts.push(r.text);
+        if (!providerDetected && r.detected) providerDetected = r.detected;
         done += 1;
         onProgress?.({ stage: "translating", done, totalChunks });
       }
+      // Prefer the API's own detection; fall back to our script heuristic.
+      const detectedSource = isAuto
+        ? isoName(providerDetected) ?? detected?.label
+        : undefined;
       return {
         translatedText: parts.join(""),
-        detectedSource: detected ? detected.label : undefined,
+        detectedSource,
         provider: provider.id,
         model: provider.label,
-        notes: [
-          `Translated via ${provider.label} — free online translation, nothing to install.`,
-        ],
       };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
